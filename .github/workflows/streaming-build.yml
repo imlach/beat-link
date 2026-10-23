@@ -1,0 +1,22 @@
+name: Experimental streaming build
+on:
+  push:
+    branches: ['codex/cdj3000x-streaming']
+  pull_request:
+    branches: ['codex/cdj3000x-streaming']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: mvn -B -Dmaven.javadoc.skip=true -Dgpg.skip=true verify
+      - name: Compile local capture replay helpers
+        run: javac -cp target/classes -d target/replay-tests tools/streaming/*.java

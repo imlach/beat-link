@@ -95,6 +95,7 @@ public class MetadataFinder extends LifecycleParticipant {
      * @return the metadata found, if any
      */
     private TrackMetadata requestMetadataInternal(final DataReference track, final boolean failIfPassive) {
+        if (StreamingAssets.supports(track)) return passive.get() && failIfPassive ? null : StreamingAssets.metadata(track);
         // First see if any registered metadata providers can offer it for us, provided it is a rekordbox track.
         final MediaDetails sourceDetails = getMediaDetailsFor(track.getSlotReference());
         if (sourceDetails != null) {
@@ -157,13 +158,16 @@ public class MetadataFinder extends LifecycleParticipant {
                 final Message response = client.menuRequestTyped(requestType, Message.MenuIdentifier.MAIN_MENU,
                         track.slot, track.trackType, new NumberField(track.rekordboxId));
                 final long count = response.getMenuResultsCount();
-                if (count == Message.NO_MENU_RESULTS_AVAILABLE) {
+                if (count == 0 || count == Message.NO_MENU_RESULTS_AVAILABLE) {
                     return null;
                 }
 
                 // Gather the cue list and all the metadata menu items
                 final List<Message> items = client.renderMenuItems(Message.MenuIdentifier.MAIN_MENU, track.slot, track.trackType, response);
-                final CueList cueList = (track.trackType == CdjStatus.TrackType.REKORDBOX) ? getCueList(track.rekordboxId, track.slot, client) : null;
+                // Cloud metadata is useful even when the player does not expose local cue lists.
+                final CueList cueList = (track.trackType == CdjStatus.TrackType.REKORDBOX &&
+                        track.slot != CdjStatus.TrackSourceSlot.CLOUD_SLOT) ?
+                        getCueList(track.rekordboxId, track.slot, client) : null;
                 return new TrackMetadata(track, track.trackType, items, cueList);
             } finally {
                 client.unlockForMenuOperations();
@@ -1046,7 +1050,7 @@ public class MetadataFinder extends LifecycleParticipant {
                 }
 
                 // Not in the hot cache so try actually retrieving it, if possible.
-                if (ConnectionManager.getInstance().getPlayerDBServerPort(update.getTrackSourcePlayer()) > 0 || 
+                if (StreamingAssets.supports(trackReference) || ConnectionManager.getInstance().getPlayerDBServerPort(update.getTrackSourcePlayer()) > 0 ||
                     VirtualCdj.getInstance().inOpusQuadCompatibilityMode()) {
                     if (activeRequests.add(update.getTrackSourcePlayer())) {
                         // We had to make sure we were not already asking for this track.
@@ -1055,6 +1059,14 @@ public class MetadataFinder extends LifecycleParticipant {
                             try {
                                 TrackMetadata data = requestMetadataInternal(trackReference, true);
                                 if (data != null) {
+                                    // A slow Cloud lookup must not restore metadata for a track already replaced.
+                                    DeviceUpdate latest = VirtualCdj.getInstance().getLatestStatusFor(update.getDeviceNumber());
+                                    if (!(latest instanceof CdjStatus)) return;
+                                    CdjStatus current = (CdjStatus)latest;
+                                    if (current.getTrackSourcePlayer() != trackReference.player ||
+                                            current.getTrackSourceSlot() != trackReference.slot ||
+                                            current.getTrackType() != trackReference.trackType ||
+                                            current.getRekordboxId() != trackReference.rekordboxId) return;
                                     updateMetadata(update, data);
                                 }
                             } catch (Exception e) {

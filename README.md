@@ -1,3 +1,5 @@
+> Experimental CDJ-3000X streaming fork: see [FORK.adoc](FORK.adoc) for build steps, provenance and limitations.
+
 # beat-link
 
 [![project chat](https://img.shields.io/badge/chat-on%20zulip-brightgreen)](https://deep-symmetry.zulipchat.com/#narrow/stream/275322-beat-link-trigger)

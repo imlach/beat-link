@@ -161,6 +161,7 @@ public class BeatGridFinder extends LifecycleParticipant {
      * @param beatGrid the beat grid which we retrieved
      */
     private void updateBeatGrid(TrackMetadataUpdate update, BeatGrid beatGrid) {
+        if (!StreamingAssets.isCurrent(update)) return;
         hotCache.put(DeckReference.getDeckReference(update.player, 0), beatGrid);  // Main deck
         if (update.metadata.getCueList() != null) {  // Update the cache with any hot cues in this track as well
             for (CueList.Entry entry : update.metadata.getCueList().entries) {
@@ -232,6 +233,7 @@ public class BeatGridFinder extends LifecycleParticipant {
      * @return the beat grid found, if any
      */
     private BeatGrid requestBeatGridInternal(final DataReference trackReference, final TrackMetadataUpdate fromUpdate) {
+        if (StreamingAssets.supports(trackReference)) return MetadataFinder.getInstance().isPassive() && fromUpdate != null ? null : StreamingAssets.grid(trackReference);
 
         // First see if any registered metadata providers can offer it to us.
         final MediaDetails sourceDetails = MetadataFinder.getInstance().getMediaDetailsFor(trackReference.getSlotReference());
@@ -302,6 +304,8 @@ public class BeatGridFinder extends LifecycleParticipant {
         Message response = client.simpleRequest(Message.KnownType.BEAT_GRID_REQ, null,
                 client.buildRMST(Message.MenuIdentifier.DATA, slot.slot, trackType), new NumberField(rekordboxId));
         if (response.knownType == Message.KnownType.BEAT_GRID) {
+            // Empty Cloud replies are absence of a grid, not a zero-beat grid.
+            if (response.arguments.get(3).getSize() == 0) return null;
             return new BeatGrid(new DataReference(slot, rekordboxId, trackType), response);
         }
         if (WaveformFinder.retryUnanalyzedTrack(fromUpdate, retrying, metadataListener, "beat grid")) {

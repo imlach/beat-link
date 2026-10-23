@@ -188,6 +188,7 @@ public class ArtFinder extends LifecycleParticipant {
      * @param art the album art which we retrieved
      */
     private void updateArt(TrackMetadataUpdate update, AlbumArt art) {
+        if (!StreamingAssets.isCurrent(update)) return;
         hotCache.put(DeckReference.getDeckReference(update.player, 0), art);  // Main deck
         if (update.metadata.getCueList() != null) {  // Update the cache with any hot cues in this track as well
             for (CueList.Entry entry : update.metadata.getCueList().entries) {
@@ -379,6 +380,7 @@ public class ArtFinder extends LifecycleParticipant {
      */
     private AlbumArt requestArtworkInternal(final DataReference artReference,
                                             final boolean failIfPassive) {
+        if (StreamingAssets.supports(artReference)) return MetadataFinder.getInstance().isPassive() && failIfPassive ? null : StreamingAssets.art(artReference);
 
         // First see if any registered metadata providers can offer it for us, provided it is a rekordbox track.
         final MediaDetails sourceDetails = MetadataFinder.getInstance().getMediaDetailsFor(artReference.getSlotReference());

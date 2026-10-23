@@ -381,6 +381,7 @@ public class WaveformFinder extends LifecycleParticipant {
      * @param preview the waveform preview which we retrieved
      */
     private void updatePreview(TrackMetadataUpdate update, WaveformPreview preview) {
+        if (!StreamingAssets.isCurrent(update)) return;
         previewHotCache.put(DeckReference.getDeckReference(update.player, 0), preview);  // Main deck
         if (update.metadata.getCueList() != null) {  // Update the cache with any hot cues in this track as well
             for (CueList.Entry entry : update.metadata.getCueList().entries) {
@@ -399,6 +400,7 @@ public class WaveformFinder extends LifecycleParticipant {
      * @param detail the waveform detail which we retrieved
      */
     private void updateDetail(TrackMetadataUpdate update, WaveformDetail detail) {
+        if (!StreamingAssets.isCurrent(update)) return;
         detailHotCache.put(DeckReference.getDeckReference(update.player, 0), detail);  // Main deck
         if (update.metadata.getCueList() != null) {  // Update the cache with any hot cues in this track as well
             for (CueList.Entry entry : update.metadata.getCueList().entries) {
@@ -512,6 +514,7 @@ public class WaveformFinder extends LifecycleParticipant {
      * @return the waveform preview found, if any
      */
     private WaveformPreview requestPreviewInternal(final DataReference trackReference, final TrackMetadataUpdate fromUpdate) {
+        if (StreamingAssets.supports(trackReference)) return MetadataFinder.getInstance().isPassive() && fromUpdate != null ? null : StreamingAssets.preview(trackReference);
 
         // First see if any registered metadata providers can offer it for us.
         final MediaDetails sourceDetails = MetadataFinder.getInstance().getMediaDetailsFor(trackReference.getSlotReference());
@@ -712,6 +715,7 @@ public class WaveformFinder extends LifecycleParticipant {
      * @return the waveform preview found, if any
      */
     private WaveformDetail requestDetailInternal(final DataReference trackReference, final TrackMetadataUpdate fromUpdate) {
+        if (StreamingAssets.supports(trackReference)) return MetadataFinder.getInstance().isPassive() && fromUpdate != null ? null : StreamingAssets.detail(trackReference);
 
         // First see if any registered metadata providers can offer it to us.
         final MediaDetails sourceDetails = MetadataFinder.getInstance().getMediaDetailsFor(trackReference.getSlotReference());

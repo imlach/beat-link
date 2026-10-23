@@ -343,6 +343,16 @@ public class TrackMetadata {
      * @param items the menu item responses that were received in response to the render menu request
      * @param cueList the cues associated with the track, if any
      */
+    /** Experimental metadata obtained directly from a streaming deck. */
+    TrackMetadata(DataReference reference, String title, String artist, int duration, int tempo) {
+        this(reference, reference.trackType, Collections.emptyList(), null);
+        this.title = title;
+        this.artist = new SearchableItem(0, artist);
+        this.duration = duration;
+        this.tempo = tempo;
+        this.artworkId = reference.rekordboxId; // UDP artwork is addressed by track reference.
+    }
+
     TrackMetadata(DataReference reference, CdjStatus.TrackType trackType, List<Message> items, CueList cueList) {
         rawRow = null;  // We did not create this from a PDB file.
         trackReference = reference;

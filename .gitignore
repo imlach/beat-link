@@ -9,3 +9,8 @@ dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
 .idea/
+
+# Local hardware research evidence
+*.pcap
+*.pcapng
+streaming-observations*.jsonl

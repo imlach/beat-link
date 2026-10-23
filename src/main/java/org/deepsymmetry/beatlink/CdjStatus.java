@@ -136,6 +136,10 @@ public class CdjStatus extends DeviceUpdate {
          * The track was loaded from a computer’s rekordbox collection over the network.
          */
         COLLECTION (4),
+        /** Cloud library source observed on CDJ-3000X firmware 1.31. */
+        CLOUD_SLOT (6),
+        /** Direct streaming source observed on CDJ-3000X. */
+        STREAMING_SLOT (10),
         /**
          * The track was loaded from USB 2 on an XDJ-XZ in four-deck mode.
          */
@@ -206,6 +210,8 @@ public class CdjStatus extends DeviceUpdate {
          * The track was loaded from an audio CD, and so has not been analyzed for beat grid and waveforms.
          */
         CD_DIGITAL_AUDIO (5),
+        /** Direct streaming track observed on CDJ-3000X. */
+        STREAMING (8),
         /**
          * We received a value that we did not recognize, so we don’t know what it means.
          */
@@ -618,7 +624,7 @@ public class CdjStatus extends DeviceUpdate {
      */
     private static final Set<Integer> expectedStatusPacketSizes = Collections.newSetFromMap(new ConcurrentHashMap<>());
     static {
-        expectedStatusPacketSizes.addAll(Arrays.asList(0xd0, 0xd4, 0x11c, 0x124));
+        expectedStatusPacketSizes.addAll(Arrays.asList(0xd0, 0xd4, 0x11c, 0x124, 0x200, 0x480));
     }
 
     /**

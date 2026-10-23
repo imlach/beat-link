@@ -994,8 +994,30 @@ public class VirtualCdj extends LifecycleParticipant {
      *
      * @return the thread
      */
+    /** Experimental read-only UDP asset observation hook for the isolated hardware probe. */
+    public volatile java.util.function.Consumer<DatagramPacket> udpAssetObserver;
+
+    /** Send only a bounded, read-only asset request; never transport or settings commands. */
+    public void requestUdpAsset(InetAddress target, long trackId, int sourcePlayer,
+                                int slot, int trackType, int asset) throws IOException {
+        if (asset < 1 || asset > 9) throw new IllegalArgumentException("Asset must be 1..9");
+        ensureRunning();
+        byte[] request = new byte[44];
+        System.arraycopy("Qspt1WmJOL".getBytes(java.nio.charset.StandardCharsets.US_ASCII), 0, request, 0, 10);
+        request[10] = 0x55;
+        byte[] name = "BLT-UDP-PROBE".getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        System.arraycopy(name, 0, request, 11, name.length);
+        request[31] = 1;
+        request[33] = getDeviceNumber();
+        request[35] = 8;
+        java.nio.ByteBuffer.wrap(request).putInt(36, (int)trackId);
+        request[40] = (byte)asset; request[41] = (byte)sourcePlayer;
+        request[42] = (byte)slot; request[43] = (byte)trackType;
+        socket.get().send(new DatagramPacket(request, request.length, target, UPDATE_PORT));
+    }
+
     private Thread createStatusReceiver() {
-        final byte[] buffer = new byte[512];
+        final byte[] buffer = new byte[2048];
         final DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
 
         // Create the update reception thread
@@ -1003,6 +1025,7 @@ public class VirtualCdj extends LifecycleParticipant {
             boolean received;
             while (isRunning()) {
                 try {
+                    packet.setLength(buffer.length);
                     socket.get().receive(packet);
                     received = true;
                 } catch (IOException e) {
@@ -1017,6 +1040,11 @@ public class VirtualCdj extends LifecycleParticipant {
                 }
                 try {
                     if (received && (packet.getAddress() != socket.get().getLocalAddress())) {
+                        if (packet.getLength() >= 52 && packet.getData()[10] == 0x56 && udpAssetObserver != null) {
+                            byte[] copy = Arrays.copyOfRange(packet.getData(), packet.getOffset(), packet.getOffset() + packet.getLength());
+                            udpAssetObserver.accept(new DatagramPacket(copy, copy.length, packet.getAddress(), packet.getPort()));
+                            continue;
+                        }
                         DeviceUpdate update = buildUpdate(packet);
                         if (update != null && isRunning()) {
                             processUpdate(update);
