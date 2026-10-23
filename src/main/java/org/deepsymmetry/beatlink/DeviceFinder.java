@@ -42,6 +42,12 @@ public class DeviceFinder extends LifecycleParticipant {
      */
     private final AtomicReference<DatagramSocket> socket = new AtomicReference<>(null);
 
+    /** Send monitor discovery from the discovery port used by the observed A9 protocol. */
+    void sendMonitorDiscovery(DatagramPacket packet) throws java.io.IOException {
+        ensureRunning(); socket.get().send(packet);
+    }
+
+
     /**
      * Track when we started listening for announcement packets.
      */

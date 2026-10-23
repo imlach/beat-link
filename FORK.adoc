@@ -1,38 +1,30 @@
-= CDJ-3000X streaming research fork
+= A9 research archive: known broken coexistence
 
-This experimental branch extends Kevinnns/beat-link CDJ-3000x commit
-ff0008d2709df2c5c3d0e2ed4428c855fc0d6008, in the Deep-Symmetry/beat-link fork network.
-Upstream authorship, history and licensing are retained.
+This branch preserves the experimental A9 monitor code separately from
+codex/cdj3000x-streaming. Do not enable it for live track monitoring.
 
-== Scope
+209 captured A9 state frames decoded successfully. Physical movements on
+channels 3 and 4 were confirmed. The monitor used the TCS-SHOWKONTROL wire
+identity with ShowKontrol closed. No mixer settings commands were sent.
 
-Cloud source handling, full 3000X status packets and opt-in UDP streaming assets
-are integrated with the normal metadata, artwork, waveform and beat-grid finders.
-Enable with -Dbeatlink.experimentalStreaming=true. It is off by default.
-The streaming branch contains no A9 monitor registration or fader parser.
-A9 experiments are preserved on codex/a9-research and are not suitable for use
-alongside track monitoring: the combined registration froze deck updates.
+The combined run stopped receiving fresh track status on both decks after
+monitor registration. Cached titles and waveforms remained visible while
+faders continued updating. Initial coexistence claims were incorrect.
+A separate address/socket design has not been implemented or validated.
+Player-number defence remains enabled. Crossfader/VU support is not validated.
 
-== Build
+The streaming-only branch removes these monitor hooks completely.
+The research dependency has a distinct version to avoid accidental substitution:
+8.1.0-imlach-a9-research-SNAPSHOT.
 
-Use JDK 17 and Maven. Run:
+The tools/a9 launcher is retained as source evidence only. It depends on the
+companion BLT TestLauncher and automatically starts the problematic handshake.
+Do not run it in a show. Raw captures and vendor binaries are not distributed.
 
- mvn -Dmaven.javadoc.skip=true -Dgpg.skip=true install
+JDK 17 and Maven can compile the library using:
 
-The local dependency is org.deepsymmetry:beat-link:8.1.0-imlach-streaming-SNAPSHOT.
-Build the matching imlach/beat-link-trigger codex/cdj3000x-streaming branch next.
-No artifact has been published to Maven Central.
+ mvn -Dmaven.javadoc.skip=true -Dgpg.skip=true verify
 
-== Evidence and limits
-
-CDJ-3000X firmware 1.31: Apple Music and USB assets were decoded in local tests.
-Offline replay covered 14 asset groups, including shuffled, duplicate, missing,
-conflicting and stale fragments, plus 17 metadata responses.
-Replay helpers in tools/streaming require local captures, which are deliberately
-not distributed. Track audio, artwork, raw captures, account data and local
-machine logs are not included in this fork.
-
-Initial combined A9 results were overstated: cached metadata looked healthy
-while fresh status and playback position had stopped. The separated streaming
-build still requires a sustained live freshness and track-transition test.
-This is research code, not a production release or upstream-supported feature.
+Upstream provenance: Kevinnns/beat-link CDJ-3000x at
+ff0008d2709df2c5c3d0e2ed4428c855fc0d6008, followed by our streaming and A9 work.
+Original authorship and licenses are retained.

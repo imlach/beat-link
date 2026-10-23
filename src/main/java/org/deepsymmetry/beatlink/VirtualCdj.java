@@ -1016,6 +1016,40 @@ public class VirtualCdj extends LifecycleParticipant {
         socket.get().send(new DatagramPacket(request, request.length, target, UPDATE_PORT));
     }
 
+    /** Read-only monitor-class discovery handshake; claims no player slot. */
+    private volatile boolean mixerMonitorMode;
+
+    public void beginMixerMonitor() throws IOException, InterruptedException {
+        ensureRunning();
+        if (DeviceFinder.getInstance().getLatestAnnouncementFrom(58) != null || DeviceFinder.getInstance().getLatestAnnouncementFrom(222) != null)
+            throw new IllegalStateException("Monitor identity already occupied");
+        mixerMonitorMode = true;
+        byte[] name = System.getProperty("beatlink.monitorName", "TCS-SHOWKONTROL").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        byte[] hello = Arrays.copyOf(helloBytes, 37);
+        Arrays.fill(hello,12,32,(byte)0); System.arraycopy(name,0,hello,12,name.length);
+        hello[33]=1; hello[35]=37; hello[36]=5;
+        for (int i=0;i<3;i++) { DeviceFinder.getInstance().sendMonitorDiscovery(new DatagramPacket(hello,hello.length,broadcastAddress.get(),DeviceFinder.ANNOUNCEMENT_PORT)); Thread.sleep(300); }
+        byte[] claim = Arrays.copyOf(claimStage2bytes,50);
+        Arrays.fill(claim,12,32,(byte)0); System.arraycopy(name,0,claim,12,name.length);
+        System.arraycopy(keepAliveBytes,44,claim,36,4); System.arraycopy(keepAliveBytes,MAC_ADDRESS_OFFSET,claim,40,6);
+        claim[33]=1; claim[46]=(byte)136; claim[48]=5; claim[49]=0;
+        for (int i=1;i<=3;i++) { claim[47]=(byte)i; DeviceFinder.getInstance().sendMonitorDiscovery(new DatagramPacket(claim,claim.length,broadcastAddress.get(),DeviceFinder.ANNOUNCEMENT_PORT)); Thread.sleep(300); }
+        announceMixerMonitor();
+    }
+
+    /** Opt-in monitor announcement only: no mixer settings or transport commands. */
+    public void announceMixerMonitor() throws IOException {
+        ensureRunning();
+        if (DeviceFinder.getInstance().getLatestAnnouncementFrom(222) != null)
+            throw new IllegalStateException("Monitor number 222 occupied");
+        byte[] announce = Arrays.copyOf(keepAliveBytes, keepAliveBytes.length);
+        Arrays.fill(announce, 12, 32, (byte)0);
+        byte[] name = System.getProperty("beatlink.monitorName", "TCS-SHOWKONTROL").getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+        System.arraycopy(name, 0, announce, 12, name.length);
+        announce[33] = 1; announce[36] = (byte)222; announce[37] = 0; announce[48] = 3; announce[52] = 5; announce[53] = 0x20;
+        DeviceFinder.getInstance().sendMonitorDiscovery(new DatagramPacket(announce, announce.length, broadcastAddress.get(), DeviceFinder.ANNOUNCEMENT_PORT));
+    }
+
     private Thread createStatusReceiver() {
         final byte[] buffer = new byte[2048];
         final DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
@@ -1040,6 +1074,7 @@ public class VirtualCdj extends LifecycleParticipant {
                 }
                 try {
                     if (received && (packet.getAddress() != socket.get().getLocalAddress())) {
+                        if ((packet.getLength() == 248 || packet.getLength() == 266) && packet.getData()[10] == 0x39) { MixerFaders.accept(packet); continue; }
                         if (packet.getLength() >= 52 && packet.getData()[10] == 0x56 && udpAssetObserver != null) {
                             byte[] copy = Arrays.copyOfRange(packet.getData(), packet.getOffset(), packet.getOffset() + packet.getLength());
                             udpAssetObserver.accept(new DatagramPacket(copy, copy.length, packet.getAddress(), packet.getPort()));
@@ -1290,6 +1325,7 @@ public class VirtualCdj extends LifecycleParticipant {
 
             // Either way, let people know we are done.
             deliverLifecycleAnnouncement(logger, false);
+            mixerMonitorMode = false;
             setDeviceNumber((byte)0);  // Set up for self-assignment if restarted.
         }
     }
@@ -1300,9 +1336,13 @@ public class VirtualCdj extends LifecycleParticipant {
      */
     private void sendAnnouncement(InetAddress broadcastAddress) {
         try {
-            DatagramPacket announcement = new DatagramPacket(keepAliveBytes, keepAliveBytes.length,
-                    broadcastAddress, DeviceFinder.ANNOUNCEMENT_PORT);
-            socket.get().send(announcement);
+            if (mixerMonitorMode) {
+                announceMixerMonitor();
+            } else {
+                DatagramPacket announcement = new DatagramPacket(keepAliveBytes, keepAliveBytes.length,
+                        broadcastAddress, DeviceFinder.ANNOUNCEMENT_PORT);
+                socket.get().send(announcement);
+            }
             Thread.sleep(getAnnounceInterval());
         } catch (Throwable t) {
             logger.warn("Unable to send announcement packet, flushing DeviceFinder due to likely network change and shutting down.", t);

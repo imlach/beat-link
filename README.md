@@ -1,4 +1,4 @@
-> Experimental CDJ-3000X streaming fork: see [FORK.adoc](FORK.adoc) for build steps, provenance and limitations.
+> A9 RESEARCH ARCHIVE: combined monitoring froze deck updates. Do not use for live track monitoring. See [FORK.adoc](FORK.adoc).
 
 # beat-link
 
