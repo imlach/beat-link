@@ -16,26 +16,46 @@ final class StreamingRequest<T> {
     private final LongUnaryOperator delays;
     private ScheduledFuture<?> scheduled;
     private int attempts;
+    private final long budgetNanos;
+    private long startedNanos;
 
     StreamingRequest(ScheduledExecutorService scheduler, BooleanSupplier current, Sender sender,
                      Reporter reporter, LongUnaryOperator delays) {
+        this(scheduler, current, sender, reporter, delays, 60000);
+    }
+    StreamingRequest(ScheduledExecutorService scheduler, BooleanSupplier current, Sender sender,
+                     Reporter reporter, LongUnaryOperator delays, long budgetMillis) {
+        if (budgetMillis <= 0) throw new IllegalArgumentException("Positive retry budget required");
+        this.budgetNanos=TimeUnit.MILLISECONDS.toNanos(budgetMillis);
         this.scheduler=scheduler; this.current=current; this.sender=sender;
         this.reporter=reporter; this.delays=delays;
     }
     static long delay(int attempt) {
         return attempt <= 3 ? 1500 : Math.min(30000, 3000L << Math.min(4, attempt-4));
     }
-    synchronized void start() { if (scheduled == null && !future.isDone()) scheduled=scheduler.schedule(this::attempt,0,TimeUnit.MILLISECONDS); }
+    synchronized void start() {
+        if (scheduled == null && !future.isDone()) {
+            startedNanos=System.nanoTime();
+            scheduled=scheduler.schedule(this::attempt,0,TimeUnit.MILLISECONDS);
+        }
+    }
     private synchronized void attempt() {
         if(future.isDone())return;
         try {
             if(!current.getAsBoolean()){cancel();return;}
+            long remaining=budgetNanos-(System.nanoTime()-startedNanos);
+            if (remaining <= 0) {
+                cancel(); // Retained in the asset cache: callers cannot start a new budget.
+                reporter.report(attempts,0,new TimeoutException("Streaming retry budget exhausted"));
+                return;
+            }
             Exception failure=null;
             try {sender.send(++attempts);} catch(Exception ex){failure=ex;}
             if(future.isDone())return;
             long delay=delays.applyAsLong(attempts);
             reporter.report(attempts,delay,failure);
-            scheduled=scheduler.schedule(this::attempt,delay,TimeUnit.MILLISECONDS);
+            remaining=Math.max(0,budgetNanos-(System.nanoTime()-startedNanos));
+            scheduled=scheduler.schedule(this::attempt,Math.min(TimeUnit.MILLISECONDS.toNanos(delay),remaining),TimeUnit.NANOSECONDS);
         } catch(Exception ex) {future.completeExceptionally(ex);}
     }
     synchronized boolean complete(T value) {

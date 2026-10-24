@@ -75,7 +75,8 @@ public final class StreamingAssets {
                 VirtualCdj.getInstance().requestUdpAsset(e.address,e.raw.id(),e.raw.source(),e.raw.slot(),e.raw.type(),kind);
             }, (attempt,delay,failure) -> {
                 // First three requests retain the quick initial cadence; subsequent attempts back off.
-                if(failure!=null) logger.warn("Streaming asset send failed ref={} kind={} attempt={} retryMs={}",r,kind,attempt,delay,failure);
+                if(delay==0 && failure instanceof TimeoutException) logger.info("Streaming asset retry budget exhausted ref={} kind={} attempts={}; no further requests until unload",r,kind,attempt);
+                else if(failure!=null) logger.warn("Streaming asset send failed ref={} kind={} attempt={} retryMs={}",r,kind,attempt,delay,failure);
                 else if(attempt>=3) logger.info("Streaming asset still pending ref={} kind={} attempt={} retryMs={}",r,kind,attempt,delay);
             }, attempt -> StreamingRequest.delay((int)attempt)));
         request.start(); // Only after publication, so immediate responses find the request.

@@ -39,13 +39,17 @@ This is research code, not a production release or upstream-supported feature.
 
 == Streaming retry recovery
 
-Missing assets remain pending while the same track is loaded. After the initial
+Missing assets retry for up to 60 seconds from the first request while the same track is loaded. After the initial
 1.5-second cadence, requests back off to a maximum 30-second interval. A caller's
 12-second wait expiring does not cache a permanent failure. Unloading the track
 or stopping the client cancels requests. Late assets re-notify the normal finders.
 
 Logs include asset reference, kind, attempt and retry delay, successful byte
 counts, send errors and rejected assembled assets. Payloads are not logged.
-Five offline regression tests cover backoff, recovery after initial send failures,
+Six offline regression tests cover backoff, recovery after initial send failures,
 caller timeout, unload and cancellation. The companion uberjar builds with JDK 17;
 this change still requires live track-transition and delayed-waveform validation.
+
+After the 60-second budget expires, the request is cancelled and retained until
+unload, so repeated finder calls cannot restart the retry budget. A single expiry
+message is logged. Reloading after an observed unload creates a new budget.

@@ -52,4 +52,17 @@ public class StreamingRequestTest {
             r.cancel();r.start();Thread.sleep(30);assertEquals(0,sends.get());assertTrue(r.future.isCancelled());
         }finally{executor.shutdownNow();}
     }
+    @Test public void budgetExpiryStopsRetriesAndCannotBeRestarted() throws Exception {
+        ScheduledExecutorService executor=Executors.newSingleThreadScheduledExecutor();
+        try {
+            AtomicInteger sends=new AtomicInteger();
+            CountDownLatch expired=new CountDownLatch(1);
+            StreamingRequest<String> r=new StreamingRequest<>(executor,()->true,n->sends.incrementAndGet(),
+                    (n,d,e)->{if(d==0 && e instanceof TimeoutException)expired.countDown();},n->10000,50);
+            r.start();assertTrue(expired.await(2,TimeUnit.SECONDS));
+            assertEquals(1,sends.get());assertTrue(r.future.isCancelled());
+            r.start();Thread.sleep(60);assertEquals(1,sends.get());
+            assertFalse(r.complete("too late"));
+        }finally{executor.shutdownNow();}
+    }
 }
