@@ -36,3 +36,16 @@ Initial combined A9 results were overstated: cached metadata looked healthy
 while fresh status and playback position had stopped. The separated streaming
 build still requires a sustained live freshness and track-transition test.
 This is research code, not a production release or upstream-supported feature.
+
+== Streaming retry recovery
+
+Missing assets remain pending while the same track is loaded. After the initial
+1.5-second cadence, requests back off to a maximum 30-second interval. A caller's
+12-second wait expiring does not cache a permanent failure. Unloading the track
+or stopping the client cancels requests. Late assets re-notify the normal finders.
+
+Logs include asset reference, kind, attempt and retry delay, successful byte
+counts, send errors and rejected assembled assets. Payloads are not logged.
+Five offline regression tests cover backoff, recovery after initial send failures,
+caller timeout, unload and cancellation. The companion uberjar builds with JDK 17;
+this change still requires live track-transition and delayed-waveform validation.

@@ -11,7 +11,8 @@ import java.util.concurrent.*;
 public final class StreamingAssets {
     private static final StreamingAssets INSTANCE = new StreamingAssets();
     private final Map<DataReference, Entry> entries = new ConcurrentHashMap<>();
-    private final ExecutorService requests = Executors.newFixedThreadPool(2, r -> {
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(StreamingAssets.class);
+    private final ScheduledExecutorService requests = Executors.newScheduledThreadPool(2, r -> {
         Thread t = new Thread(r, "streaming-asset-request"); t.setDaemon(true); return t;
     });
     private static final class Entry {
@@ -19,12 +20,12 @@ public final class StreamingAssets {
         final InetAddress address;
         final UdpAssets.Ref raw;
         final UdpAssets.Assembler assembler = new UdpAssets.Assembler();
-        final Map<Integer, CompletableFuture<UdpAssets.Asset>> futures = new ConcurrentHashMap<>();
+        final Map<Integer, StreamingRequest<UdpAssets.Asset>> futures = new ConcurrentHashMap<>();
         Entry(DataReference r, CdjStatus s) {
             reference=r; address=s.getAddress();
             raw=new UdpAssets.Ref(Integer.toUnsignedLong(r.rekordboxId),r.player,r.slot.protocolValue&255,r.trackType.protocolValue&255);
         }
-        void cancel() { for (CompletableFuture<?> f : futures.values()) f.cancel(false); assembler.clear(); }
+        void cancel() { for (StreamingRequest<?> f : futures.values()) f.cancel(); assembler.clear(); }
     }
     private StreamingAssets() {
         VirtualCdj.getInstance().addLifecycleListener(new LifecycleListener() {
@@ -65,24 +66,26 @@ public final class StreamingAssets {
         VirtualCdj.getInstance().udpAssetObserver=this::receive;
         if(entries.size()>=16 && !entries.containsKey(r))return null;
         Entry e=entries.computeIfAbsent(r, key->new Entry(r,status));
-        CompletableFuture<UdpAssets.Asset> future=e.futures.computeIfAbsent(kind,key->{
-            CompletableFuture<UdpAssets.Asset> f=new CompletableFuture<>();
-            requests.submit(()->{
-                try {
-                    for(int attempt=0;attempt<3&&!f.isDone();attempt++) {
-                        CdjStatus current=loaded(r);
-                        if(current==null || !current.getAddress().equals(e.address)){f.cancel(false);return;}
-                        VirtualCdj.getInstance().requestUdpAsset(e.address,e.raw.id(),e.raw.source(),e.raw.slot(),e.raw.type(),kind);
-                        try { f.get(1500,TimeUnit.MILLISECONDS); } catch(TimeoutException ignored) {}
-                    }
-                    if(!f.isDone())f.complete(null);
-                }catch(Exception ex){f.complete(null);}
-            });
-            return f;
-        });
-        try { UdpAssets.Asset a=future.get(12,TimeUnit.SECONDS);return loaded(r)==null?null:a; }
-        catch(Exception ex){return null;}
+        StreamingRequest<UdpAssets.Asset> request=e.futures.computeIfAbsent(kind,key ->
+            new StreamingRequest<>(requests, () -> {
+                CdjStatus current=loaded(r);
+                return entries.get(r)==e && current!=null && current.getAddress().equals(e.address);
+            }, attempt -> {
+                logger.debug("Streaming asset request ref={} kind={} destination={} attempt={}", r,kind,e.address,attempt);
+                VirtualCdj.getInstance().requestUdpAsset(e.address,e.raw.id(),e.raw.source(),e.raw.slot(),e.raw.type(),kind);
+            }, (attempt,delay,failure) -> {
+                // First three requests retain the quick initial cadence; subsequent attempts back off.
+                if(failure!=null) logger.warn("Streaming asset send failed ref={} kind={} attempt={} retryMs={}",r,kind,attempt,delay,failure);
+                else if(attempt>=3) logger.info("Streaming asset still pending ref={} kind={} attempt={} retryMs={}",r,kind,attempt,delay);
+            }, attempt -> StreamingRequest.delay((int)attempt)));
+        request.start(); // Only after publication, so immediate responses find the request.
+        try { UdpAssets.Asset a=request.future.get(12,TimeUnit.SECONDS);return entries.get(r)!=e || loaded(r)==null?null:a; }
+        catch(InterruptedException ex){Thread.currentThread().interrupt();return null;}
+        catch(TimeoutException ex){logger.debug("Streaming asset caller wait expired; background retry continues ref={} kind={}",r,kind);return null;}
+        catch(CancellationException ex){return null;}
+        catch(ExecutionException ex){logger.warn("Streaming asset request failed ref={} kind={}",r,kind,ex);e.futures.remove(kind,request);return null;}
     }
+
     private void receive(DatagramPacket p) {
         for(Entry e:entries.values()) {
             if(!e.address.equals(p.getAddress()) || loaded(e.reference)==null)continue;
@@ -92,13 +95,21 @@ public final class StreamingAssets {
             if(debug!=null)try {
                 java.nio.file.Path dir=java.nio.file.Paths.get(debug);java.nio.file.Files.createDirectories(dir);
                 java.nio.file.Files.write(dir.resolve("asset-"+a.ref.id()+"-"+a.kind+"-"+System.nanoTime()+".bin"),a.data);
-            }catch(java.io.IOException ignored) {}
+            }catch(java.io.IOException ex) {logger.warn("Unable to write streaming diagnostic asset ref={} kind={}",e.reference,a.kind,ex);}
             try {
                 if(a.kind==3||a.kind==4)UdpAssets.waveform(a);
                 if(a.kind==6)UdpAssets.grid(a);
-                CompletableFuture<UdpAssets.Asset> f=e.futures.get(a.kind);
-                if(f!=null)f.complete(a);
-            }catch(IllegalArgumentException ignored) {}
+                StreamingRequest<UdpAssets.Asset> f=e.futures.get(a.kind);
+                if(f!=null && f.complete(a)) {
+                    logger.info("Streaming asset received ref={} kind={} bytes={}",e.reference,a.kind,a.data.length);
+                    requests.execute(() -> {
+                        try {
+                            if(entries.get(e.reference)==e && loaded(e.reference)!=null)
+                                MetadataFinder.getInstance().streamingAssetAvailable(e.reference,a.kind);
+                        } catch(Exception ex) {logger.warn("Unable to publish late streaming asset ref={} kind={}",e.reference,a.kind,ex);}
+                    });
+                }
+            }catch(IllegalArgumentException ex) {logger.warn("Invalid streaming asset ref={} kind={} bytes={}; retry remains active",e.reference,a.kind,a.data.length,ex);}
         }
     }
     public static TrackMetadata metadata(DataReference r) {

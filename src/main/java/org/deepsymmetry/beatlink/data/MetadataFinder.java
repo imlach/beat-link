@@ -465,6 +465,29 @@ public class MetadataFinder extends LifecycleParticipant {
         }
     }
 
+    /** Re-deliver current metadata when an asset arrives after a finder's bounded wait. */
+    void streamingAssetAvailable(DataReference reference, int kind) {
+        if (!isRunning()) return;
+        for (Map.Entry<DeckReference, TrackMetadata> entry : new HashMap<>(hotCache).entrySet()) {
+            if (entry.getKey().hotCue != 0 || !reference.equals(entry.getValue().trackReference)) continue;
+            int player = entry.getKey().player;
+            TrackMetadata data = entry.getValue();
+            // Text can arrive after the initial placeholder metadata was published.
+            if (kind == 1) {
+                TrackMetadata refreshed = StreamingAssets.metadata(reference);
+                if (refreshed != null) data = refreshed;
+            }
+            if (!isRunning() || !VirtualCdj.getInstance().isRunning()) return;
+            DeviceUpdate latest = VirtualCdj.getInstance().getLatestStatusFor(player);
+            if (!(latest instanceof CdjStatus)) continue;
+            CdjStatus status = (CdjStatus)latest;
+            if (status.getTrackSourcePlayer() == reference.player && status.getTrackSourceSlot() == reference.slot &&
+                    status.getTrackType() == reference.trackType && status.getRekordboxId() == reference.rekordboxId) {
+                updateMetadata(status, data);
+            }
+        }
+    }
+
     /**
      * We have obtained metadata for a device, so store it and alert any listeners.
      *
